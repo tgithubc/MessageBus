@@ -1,6 +1,7 @@
 package com.tgithubc.messagebus.lib.util;
 
 import android.support.annotation.NonNull;
+
 import com.tgithubc.messagebus.lib.message.Decorate;
 import com.tgithubc.messagebus.IObserver;
 import com.tgithubc.messagebus.lib.message.Message;
@@ -48,5 +49,23 @@ public class BusTool {
         message.invokedMethod = invokeMethod;
         message.decorateInfo = info;
         return message;
+    }
+
+    /**
+     * 获取观察者implements的所有接口
+     *
+     * @param observer
+     * @return
+     */
+    @SuppressWarnings("unchecked")
+    public static List<Class<? extends IObserver>> getAllMethodInterfaces(IObserver observer) {
+        Class[] interfaces = observer.getClass().getInterfaces();
+        List<Class<? extends IObserver>> arrayList = new ArrayList<>();
+        for (Class clazz : interfaces) {
+            if (IObserver.class.isAssignableFrom(clazz)) {
+                arrayList.add(clazz);
+            }
+        }
+        return arrayList;
     }
 }

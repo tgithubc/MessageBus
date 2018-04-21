@@ -14,4 +14,5 @@ import java.lang.annotation.Target;
 public @interface Decorate {
     @RunThread int runThread() default RunThread.MAIN;
     long delayedTime() default 0L;
+    boolean isSticky() default false;
 }

@@ -9,6 +9,8 @@ import com.tgithubc.messagebus.lib.handler.ThreadMessageHandler;
 import com.tgithubc.messagebus.lib.message.Message;
 import com.tgithubc.messagebus.lib.message.RunThread;
 import com.tgithubc.messagebus.lib.proxy.DefaultProxyHandler;
+import com.tgithubc.messagebus.lib.proxy.StickyProxyHandler;
+import com.tgithubc.messagebus.lib.util.BusTool;
 
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
@@ -31,10 +33,15 @@ public class MessageBus {
     private List<WeakReference<? extends IObserver>> mObservers;
     // 每一个事件接口，对应一个handler处理对象，循环处理所有相关订阅者的方法调用
     private Map<Class<? extends IObserver>, DefaultProxyHandler> mProxyMap;
+    private Map<Class<? extends IObserver>, StickyProxyHandler> mStickyProxyMap;
+    // 这是个不太友好的数据结构，为了实现粘性消息的顺序激活，用了有序的list，多层pair为了记录方法信息
+    private List<Pair<Class<? extends IObserver>, Pair<Method, Object[]>>> mStickyMethodMap;
 
     private MessageBus() {
         mObservers = new CopyOnWriteArrayList<>();
         mProxyMap = new ConcurrentHashMap<>();
+        mStickyMethodMap = new CopyOnWriteArrayList<>();
+        mStickyProxyMap = new ConcurrentHashMap<>();
         mWorkHandler = new ThreadMessageHandler();
         mMainHandler = new ThreadMessageHandler(Looper.getMainLooper());
     }
@@ -48,19 +55,25 @@ public class MessageBus {
     }
 
     /**
-     * 获取观察者代理
+     * 获取接收普通消息对象的代理
      *
      * @param clazz
      * @param <T>
      * @return
      */
-    public <T extends IObserver> T get(Class<T> clazz) {
-        DefaultProxyHandler handler = mProxyMap.get(clazz);
-        if (handler == null) {
-            handler = new DefaultProxyHandler(mObservers, clazz);
-            mProxyMap.put(clazz, handler);
-        }
-        return (T) handler.get();
+    public <T extends IObserver> T getDefault(Class<T> clazz) {
+        return getProxy(clazz, false);
+    }
+
+    /**
+     * 获取接收粘性消息对象的代理
+     *
+     * @param clazz
+     * @param <T>
+     * @return
+     */
+    public <T extends IObserver> T getSticky(Class<T> clazz) {
+        return getProxy(clazz, true);
     }
 
     /**
@@ -113,6 +126,7 @@ public class MessageBus {
         }
         mObservers.add(new WeakReference<>(observer));
         Log.d(TAG, "add size :" + mObservers.size() + ",mObservers :" + mObservers);
+        handlerStickyMessage(observer);
     }
 
     /**
@@ -145,6 +159,78 @@ public class MessageBus {
             mWorkHandler.stop();
         }
         Log.d(TAG, "remove size :" + mObservers.size() + ",mObservers :" + mObservers);
+    }
+
+    /**
+     * 移除指定粘性消息
+     *
+     * @param stickClazz
+     */
+    public void removeStickyMessage(Class<? extends IObserver> stickClazz) {
+        mStickyProxyMap.remove(stickClazz);
+        for (Pair<Class<? extends IObserver>, Pair<Method, Object[]>> pair : mStickyMethodMap) {
+            if (stickClazz.equals(pair.first)) {
+                mStickyMethodMap.remove(pair);
+            }
+        }
+    }
+
+    /**
+     * 获取代理对象
+     *
+     * @param clazz
+     * @param sticky
+     * @param <T>
+     * @return
+     */
+    @SuppressWarnings("unchecked")
+    private <T extends IObserver> T getProxy(Class<T> clazz, boolean sticky) {
+        DefaultProxyHandler handler;
+        if (sticky) {
+            handler = mStickyProxyMap.get(clazz);
+            if (handler == null) {
+                handler = new StickyProxyHandler(mStickyMethodMap, mObservers, clazz);
+                mStickyProxyMap.put(clazz, (StickyProxyHandler) handler);
+            }
+        } else {
+            handler = mProxyMap.get(clazz);
+            if (handler == null) {
+                handler = new DefaultProxyHandler(mObservers, clazz);
+                mProxyMap.put(clazz, handler);
+            }
+        }
+        return (T) handler.get();
+    }
+
+    /**
+     * 处理粘性消息
+     *
+     * @param observer
+     */
+    private void handlerStickyMessage(IObserver observer) {
+        // ob对应的接口方法集合
+        List<Class<? extends IObserver>> list = BusTool.getAllMethodInterfaces(observer);
+        for (Pair<Class<? extends IObserver>, Pair<Method, Object[]>> pair : mStickyMethodMap) {
+            if (list.contains(pair.first)) {
+                Pair<Method, Object[]> methodPair = pair.second;
+                try {
+                    // 具体方法快照
+                    Method method = methodPair.first;
+                    Object[] args = methodPair.second;
+                    // obMethod
+                    Method obMethod = observer.getClass().getMethod(method.getName(), method.getParameterTypes());
+                    Message.DecorateInfo info = BusTool.getDecorateInfo(obMethod);
+                    // 是否粘性标示
+                    if (info.isSticky) {
+                        // 生成message去分发
+                        Message message = BusTool.obtainMessage(method, args, info, observer);
+                        dispatch(message);
+                    }
+                } catch (NoSuchMethodException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
     }
 
     /**

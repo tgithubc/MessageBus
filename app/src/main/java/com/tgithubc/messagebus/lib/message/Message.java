@@ -32,5 +32,6 @@ public class Message implements Runnable {
         @RunThread
         public int runThread = RunThread.MAIN;
         public long delayedTime = 0L;
+        public boolean isSticky = false;
     }
 }
