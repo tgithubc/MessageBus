@@ -27,6 +27,7 @@ public class BusTool {
         if (annotation != null) {
             info.runThread = annotation.runThread();
             info.delayedTime = annotation.delayedTime();
+            info.isSticky = annotation.isSticky();
         }
         return info;
     }
