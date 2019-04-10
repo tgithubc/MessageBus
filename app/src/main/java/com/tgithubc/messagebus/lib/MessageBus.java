@@ -119,7 +119,7 @@ public class MessageBus {
      *
      * @param observer
      */
-    public void register(IObserver observer) {
+    public synchronized void register(IObserver observer) {
         if (observer == null || hasRegistered(observer)) {
             Log.w(TAG, "observer == null or has been registered");
             return;
@@ -134,7 +134,7 @@ public class MessageBus {
      *
      * @param observer
      */
-    public void unRegister(IObserver observer) {
+    public synchronized void unRegister(IObserver observer) {
         if (observer == null) {
             return;
         }
@@ -166,7 +166,7 @@ public class MessageBus {
      *
      * @param stickClazz
      */
-    public void removeStickyMessage(Class<? extends IObserver> stickClazz) {
+    public synchronized void removeStickyMessage(Class<? extends IObserver> stickClazz) {
         mStickyProxyMap.remove(stickClazz);
         for (Pair<Class<? extends IObserver>, Pair<Method, Object[]>> pair : mStickyMethodMap) {
             if (stickClazz.equals(pair.first)) {
